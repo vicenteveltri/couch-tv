@@ -2017,6 +2017,8 @@
     $("shelf-section").classList.toggle("empty", !anyone && !(NIGHT && npVisible()));
     renderPeople();
     if (!KW_ON) { track.innerHTML = ""; shelfEls = []; return; }   // row switched off: nothing to draw, the section is closed up
+    // Classic and OLED: no Keep watching row; Up on an app picks it up to move it instead
+    if (!NIGHT) { data.shows = []; $("shelf-section").classList.add("empty"); track.innerHTML = ""; shelfEls = []; return; }
     if (!data.shows.length) {
       var name = PEOPLE[whoIndex()].name;
       track.innerHTML = '<p class="shelf-none">' + esc(peopleCount() < 2 ? t("nothing_yet") : t("nothing_for", { name: name })) + "</p>";
@@ -2112,20 +2114,47 @@
 
   function gridList() {
     if (NIGHT) return dockList();
-    var apps = shownApps().filter(function (a) { return a.package !== SETTINGS_PKG; });
-    var list = apps.filter(function (a) { return !tucked(a); });
-    var extra = apps.filter(tucked);
-    var inputs = resolveInputs();
-    list = list.concat(inputs);
-    data.screens.forEach(function (sc) { list.push({ kind: "screen", id: sc.id, name: sc.name, ready: sc.ready, note: sc.note }); });
-    var tools = toolItems();
-    if (expanded) return list.concat(extra, tools);
-    if (extra.length || list.length > GRID_MAX - tools.length) {
-      list = list.slice(0, GRID_MAX - 1 - tools.length).concat(tools, [moreItem()]);
-    } else list = list.concat(tools);
+    return rowList();
+  }
+  // Classic and OLED: one row, in the saved order (moved with Up, Left and Right, Down to set it),
+  // then the App Store and the house's own tiles. Apps tucked away wait behind More apps.
+  function rowList() {
+    var store = shownApps().filter(function (a) { return a.package === STORE_PKG; })[0];
+    var items = arrangeItems().items;
+    var hidden = items.filter(function (it) { return !it.kind || it.kind === "app" ? tucked(it) : false; });
+    var list = expanded ? items.slice() : items.filter(function (it) { return hidden.indexOf(it) < 0; });
+    if (store) list.push(store);
+    list = list.concat(toolItems());
+    if (!expanded && hidden.length) list.push(moreItem());
     return list;
   }
-
+  // can this tile be picked up and moved along the row? (apps, inputs and screens; not the tools)
+  function rowMovable(it) {
+    return !!(it && it.package && it.package !== STORE_PKG &&
+      ["gear", "more", "smart", "devmode"].indexOf(it.kind) < 0 &&
+      arrangeItems().items.some(function (x) { return x.package === it.package; }));
+  }
+  // Up on an app in the row: pick it up. Left and Right move it, Down (or Back, or OK) sets it.
+  function rowLift() {
+    var a = gridItems[g];
+    if (NIGHT || expanded || !rowMovable(a)) return false;
+    materialise();
+    lift = { pkg: a.package };
+    hintFlash = "";
+    renderGrid(); paintFocus();
+    return true;
+  }
+  function rowMove(dx, dy) {
+    if (dy > 0) { dropLift(); return; }
+    if (!dx) return;
+    var o = data.order, b = gridItems[g + dx];
+    if (!rowMovable(b)) return;   // the tools stay at the end
+    var i = o.packages.indexOf(lift.pkg), j = o.packages.indexOf(b.package);
+    if (i < 0 || j < 0) return;
+    o.packages[i] = b.package; o.packages[j] = lift.pkg;
+    g += dx;
+    renderGrid(); paintFocus();
+  }
   // Night: a dock of the first ten apps (home.dock_size), then Settings, then More apps (which shows
   // everything, the App Store first). The order and the More apps line come from Arrange apps on the
   // phone, or from moving apps with the TV remote (hold OK), once one is saved.
@@ -2203,7 +2232,7 @@
   var hintTimer = null, hintFlash = "";
   function renderHint() {
     var text = hintFlash ||
-      (lift ? t("app_lift_hint") : NIGHT && expanded && zone === "grid" ? t("app_add_hint") : "");
+      (lift ? t(NIGHT ? "app_lift_hint" : "app_row_lift_hint") : NIGHT && expanded && zone === "grid" ? t("app_add_hint") : "");
     $("hint").textContent = text;
     $("hint").classList.toggle("on", !!text);
     document.documentElement.classList.toggle("hinting", !!text);
@@ -2400,6 +2429,7 @@
     return true;
   }
   function moveLift(dx, dy) {
+    if (!NIGHT) { rowMove(dx, dy); return; }
     var o = data.order, i = o.packages.indexOf(lift.pkg);
     if (dx) {
       var j = i + dx;
@@ -2486,7 +2516,8 @@
     else if (it.banner) face = '<div class="face"><img src="' + esc(it.banner) + '" alt="" decoding="async"></div>';
     else if (iconUrl(it.package)) face = '<div class="face icon" style="background:' + esc(it.colour || "#2a2a30") + '"><img src="' + esc(iconUrl(it.package)) + '" alt=""></div>';
     else face = '<div class="face word" style="background:' + esc(it.colour || "#2a2a30") + '">' + esc(it.name) + "</div>";
-    var cls = "tile app" + (it.kind === "input" ? " input-ic ic-" + esc(it.icon || "hdmi") : "");
+    var cls = "tile app" + (it.kind === "input" ? " input-ic ic-" + esc(it.icon || "hdmi") : "") +
+      (face.indexOf('class="face"') === 0 ? " banner" : "") + (lift && it.package === lift.pkg ? " lifted" : "");
     return '<div class="' + cls + '">' + face + dotHTML(it) + '<div class="label">' + esc(it.name) + "</div></div>";
   }
   // The small blue dot: an app not opened yet, or (on the gear tile) a new couch-tv release.
@@ -2504,10 +2535,14 @@
       // the dock is as wide as what is in it; More apps uses all twelve columns
       GRID_COLS = expanded ? 12 : Math.max(1, Math.min(12, gridItems.length));
       $("grid").style.gridTemplateColumns = "repeat(" + GRID_COLS + ", 7rem)";
+    } else {
+      // Classic and OLED: every app in one row along the bottom, which slides sideways (app.css)
+      GRID_COLS = Math.max(1, gridItems.length);
     }
     $("grid").innerHTML = gridItems.map(appHTML).join("");
     gridEls = Array.prototype.slice.call($("grid").children);
-    if (OLD_ENGINE) {
+    if (!NIGHT) scrollRow();
+    if (OLD_ENGINE && NIGHT) {
       // no grid: app.css wraps the tiles in a flex box. The Night dock is exactly as wide as GRID_COLS
       // tiles and their gaps (its padding too); Classic and OLED fill the width the grid would, as the
       // row of eight fits it. app.css needs to know which tiles end a row and which sit in the last
@@ -2560,6 +2595,20 @@
     var first = NIGHT ? s - fit + 1 : s - 2;
     first = Math.max(0, Math.min(first, shelfEls.length - fit));
     track.style.transform = "translateX(" + (-first * step) + "px)";
+  }
+
+  // Classic and OLED: the apps are one row along the bottom. Slide it so the focused app sits a
+  // couple of tiles in from the left edge, and never past either end.
+  function scrollRow() {
+    var row = $("grid");
+    if (NIGHT) { row.style.transform = ""; return; }
+    var box = getComputedStyle(row.parentNode);
+    var el = gridEls[zone === "grid" ? g : 0],
+      view = row.parentNode.clientWidth - parseFloat(box.paddingLeft) - parseFloat(box.paddingRight);
+    if (!el || row.scrollWidth <= view) { row.style.transform = ""; return; }
+    var lead = el.offsetWidth * 2;
+    var x = Math.max(0, Math.min(el.offsetLeft - lead, row.scrollWidth - view));
+    row.style.transform = "translateX(" + (-x) + "px)";
   }
 
   function shelfOn() { return !$("shelf-section").classList.contains("empty"); }
@@ -2615,6 +2664,7 @@
       zone = "grid";
       g = Math.max(0, Math.min(g, gridEls.length - 1));
       if (gridEls[g]) gridEls[g].classList.add("focus");
+      scrollRow();
       hero(null);
       $("place").style.visibility = "";
       showPhoto();
@@ -2733,6 +2783,8 @@
       if (dx) {
         var nx = g + dx;
         if (nx >= 0 && nx < gridEls.length && Math.floor(nx / GRID_COLS) === row) g = nx;
+      } else if (dy < 0 && row === 0 && rowLift()) {
+        return;
       } else if (dy < 0 && row === 0) {
         if (cards.length) zone = "shelf";
         else if (npReach()) {
@@ -2753,7 +2805,8 @@
         g -= GRID_COLS;
       } else if (row < lastRow) {
         g = Math.min(g + GRID_COLS, gridEls.length - 1);
-      } else if (dy > 0 && !expanded && gridItems.some(function (x) { return x.kind === "more"; })) {
+      } else if (dy > 0 && NIGHT && !expanded && gridItems.some(function (x) { return x.kind === "more"; })) {
+        // (Classic and OLED: the row sits at the bottom of the screen, so Down stays put there)
         // Down from the bottom row of the dock opens the full apps view (#98), on the same app
         dockBack = gridKey(gridItems[g]);
         expanded = true; renderGrid();
@@ -4470,7 +4523,8 @@
       }),
       (TV || PREVIEW || MOCK) ? Promise.resolve() : api("GET", "/api/apps").then(function (j) { data.bridgeApps = j.apps || []; }),
       // the order arranged on the phone (or with this TV's remote)
-      NIGHT ? api("GET", "/api/app-order").then(bridgeOrder) : Promise.resolve(),
+      // (Classic and OLED use it too, for their row)
+      api("GET", "/api/app-order").then(bridgeOrder),
       // Home settings: the bridge keeps a copy, so the phone and this TV agree
       syncSettings(),
       // Android's Watch Next rows: this app may read them, the bridge's ADB may not. They name a

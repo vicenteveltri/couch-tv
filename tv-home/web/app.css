@@ -1774,3 +1774,70 @@ html:not(.kids-on) .kids { display: none; }
 .kpin-hint { font-size: 1.125rem !important; color: var(--text-3) !important; margin-top: 0.25rem !important; }
 .lighter .kids, .old-engine .kids { background: #1d2140; }
 .lighter .ktile, .lighter .ktrack, .lighter .kapp, .lighter .kkey { transition: none; }
+
+/* ================= Classic and OLED: the apps as one row along the bottom =================
+   Every app sits in a single row near the bottom edge, which slides sideways with the focus
+   (scrollRow in app.js). Icons are drawn on their own, with no grey or coloured tile behind them;
+   an app with a full TV banner keeps its banner. Margins, not gap: older TV engines (Tizen 5.5,
+   Chrome 69) have no gap for flex rows. Night is not touched. */
+html:not(.theme-night) {
+  --row-tile: 7.5rem;     /* 120: a square icon tile */
+  --row-gap: 2.25rem;
+}
+html:not(.theme-night) .apps {
+  top: auto; bottom: 2.5rem; left: 0; right: 0;
+  overflow: hidden; padding: 1.75rem var(--safe-x) 3.25rem;
+}
+html:not(.theme-night) .grid {
+  display: flex; flex-wrap: nowrap; align-items: center; width: auto;
+  background: none; box-shadow: none;
+  transition: transform 280ms var(--ease);
+}
+html:not(.theme-night) .app {
+  flex: none; width: var(--row-tile); height: var(--row-tile); margin: 0 var(--row-gap) 0 0;
+}
+html:not(.theme-night) .app:last-child { margin-right: 0; }
+/* an Android TV banner keeps its 16:9 shape, at the row's height */
+html:not(.theme-night) .app.banner { width: calc(var(--row-tile) * 16 / 9); }
+/* no tile behind icons, names and the house's own buttons (the inline colour too) */
+html:not(.theme-night) .app .face.icon,
+html:not(.theme-night) .app .face.word,
+html:not(.theme-night) .app .face.tool {
+  background: none !important; box-shadow: none; border-radius: 1.375rem;
+}
+html:not(.theme-night) .app .face.icon img { width: 100%; height: 100%; border-radius: 1.375rem; object-fit: contain; }
+html:not(.theme-night) .app .face.word { font-size: 1.375rem; padding: 0 0.25rem; }
+html:not(.theme-night) .app .face.tool svg { width: 3.25rem; height: 3.25rem; }
+/* focus: bigger, a white ring and the name under it; no sway or light sweep on a bare icon */
+html:not(.theme-night) .app.focus { transform: scale(1.14); }
+html:not(.theme-night) .app.focus .face.icon,
+html:not(.theme-night) .app.focus .face.word,
+html:not(.theme-night) .app.focus .face.tool {
+  animation: none; box-shadow: 0 0 0 0.1875rem #fff, 0 1rem 2rem rgba(0, 0, 0, 0.5);
+}
+html:not(.theme-night) .app .face.icon::after,
+html:not(.theme-night) .app .face.word::after,
+html:not(.theme-night) .app .face.tool::after { display: none; }
+.theme-oled .app.focus .face.icon,
+.theme-oled .app.focus .face.word,
+.theme-oled .app.focus .face.tool {
+  box-shadow: 0 0 1.5rem rgba(120, 190, 255, 0.55), 0 0 0 0.2rem #ffffff !important;
+}
+html:not(.theme-night) .app.focus .label { opacity: 1; }
+/* an app picked up with Up: raised above the row with a ring and a slight wiggle until Down sets it */
+html:not(.theme-night) .app.lifted, html:not(.theme-night) .app.lifted.focus { z-index: 3; transform: translateY(-1.25rem) scale(1.18); }
+html:not(.theme-night) .app.lifted .face {
+  animation: row-wiggle 0.32s ease-in-out infinite alternate;
+  box-shadow: 0 0 0 0.25rem #fff, 0 1.5rem 2.5rem rgba(0, 0, 0, 0.6) !important;
+}
+html:not(.theme-night) .app.lifted .label { opacity: 1; }
+html:not(.theme-night).lifting .app:not(.lifted) { opacity: 0.6; }
+@keyframes row-wiggle { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
+@media (prefers-reduced-motion: reduce) { html:not(.theme-night) .app.lifted .face { animation: none; } }
+/* the hint above the row while an app is picked up (inside the row's box, which clips the sides) */
+html:not(.theme-night) .apps { padding-top: 5.25rem; }
+html:not(.theme-night) .hint.on {
+  display: block; position: absolute; left: 50%; top: 0.5rem; transform: translateX(-50%); white-space: nowrap;
+  padding: 0.5rem 1.375rem; border-radius: 2rem; font-size: 1.375rem; line-height: 1.875rem; font-weight: 600; color: #fff;
+  background: rgba(20, 20, 26, 0.78); box-shadow: inset 0 0 0 0.0625rem rgba(255, 255, 255, 0.16);
+}
